@@ -6,7 +6,7 @@ MyHosts is a command-line interface (CLI) tool designed to simplify the manageme
 
 - **Add Hosts**: Quickly add new IP and domain associations to your hosts file.
 - **Delete Hosts**: Remove entries from your hosts file using either an IP address or a domain name.
-- **List Hosts**: Display all current entries in your hosts file.
+- **show Hosts**: Display all current entries in your hosts file.
 
 ## Installation
 
