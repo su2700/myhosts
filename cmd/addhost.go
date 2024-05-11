@@ -1,9 +1,7 @@
-// Package cmd contains all command-related logic for the CLI application.
 package cmd
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// addhostCmd represents the command for adding an IP address and domain name to /etc/hosts.
 var addhostCmd = &cobra.Command{
 	Use:   "addhost",
 	Short: "Add an IP and domain to /etc/hosts",
@@ -27,37 +24,73 @@ same IP or domain name already present in the file to prevent networking issues.
 
 func init() {
 	rootCmd.AddCommand(addhostCmd)
-
-	// Define flags for the IP address and domain name. Both flags are required.
 	addhostCmd.Flags().StringP("ip", "i", "", "IP address to add to /etc/hosts (required)")
 	addhostCmd.Flags().StringP("domain", "d", "", "Domain name to associate with the IP (required)")
 	addhostCmd.MarkFlagRequired("ip")
 	addhostCmd.MarkFlagRequired("domain")
 }
 
-// addToHosts adds the specified IP and domain to the /etc/hosts file after checking for conflicts.
 func addToHosts(ip, domain string) error {
-	// Open /etc/hosts with permissions to read and append. Create if it does not exist.
-	file, err := os.OpenFile("/etc/hosts", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
+	file, err := os.OpenFile("/etc/hosts", os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return err // Return an error if the file cannot be opened.
+		return err
 	}
-	defer file.Close() // Ensure the file is closed after writing.
+	defer file.Close()
 
-	scanner := bufio.NewScanner(file) // Create a scanner to read the file line by line.
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	exists := false
+	var existingEntry string
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		// Check if the line contains either the provided IP or domain.
+		lines = append(lines, line)
 		if strings.Contains(line, ip) || strings.Contains(line, domain) {
-			return errors.New("entry already exists with the same IP or domain")
+			exists = true
+			existingEntry = line
+			break
 		}
 	}
 
-	// Write the new IP and domain to the file if no conflicts were found.
-	_, err = file.WriteString(fmt.Sprintf("%s\t%s\n", ip, domain))
-	if err != nil {
-		return err // Return any errors that occur while writing to the file.
+	if exists {
+		fmt.Printf("Warning: An entry with the IP '%s' or domain '%s' already exists: %s\n", ip, domain, existingEntry)
+		fmt.Println("Do you want to update it? This will overwrite the existing entry. (yes/no)")
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(response) // Normalize the input to lowercase
+
+		// Check for any valid affirmative response
+		if response != "yes" && response != "y" {
+			return fmt.Errorf("operation cancelled by the user")
+		}
+
+		// Remove the existing line and continue to write the new one
+		var updatedLines []string
+		for _, line := range lines {
+			if line != existingEntry {
+				updatedLines = append(updatedLines, line)
+			}
+		}
+		lines = updatedLines
 	}
 
-	return nil // Return nil on successful addition.
+	// Reopen the file for writing to truncate and update content
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		return err
+	}
+
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(file, line); err != nil {
+			return err
+		}
+	}
+	// Add the new entry
+	if _, err := fmt.Fprintf(file, "%s\t%s\n", ip, domain); err != nil {
+		return err
+	}
+
+	return nil
 }
